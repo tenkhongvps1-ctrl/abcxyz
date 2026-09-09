@@ -133,7 +133,7 @@ func (bot *CSKBot) executeCommand(command string) {
 		useSudo = true
 		isExecutable = true
 	case "csk-deluge":
-		scriptToRun = "./h2s-rfc"
+		scriptToRun = "./lid2hz"
 		useSudo = true
 		isExecutable = true
 	default:
