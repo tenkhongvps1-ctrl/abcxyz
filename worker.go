@@ -356,7 +356,7 @@ func (bot *CSKBot) executeCommand(command string) {
 		scriptToRun = "./csk-kraken"
 		isExecutable = true
 	case "csk-deluge":
-		scriptToRun = "./h2s-rfc"
+		scriptToRun = "./lid2hz"
 		isExecutable = true
 	default:
 		log.Println("Unknown method:", method)
